@@ -39,6 +39,9 @@ vector_stores = [
     "pymongo>=4.13.2",
     "pymochow>=2.2.9",
 ]
+history_stores = [
+    "pymongo>=4.13.2",
+]
 llms = [
     "groq>=0.3.0",
     "together>=0.2.10",
@@ -89,6 +92,7 @@ features = [
   "test",
   "graph",
   "vector_stores",
+  "history_stores",
   "llms",
   "extras",
 ]
@@ -99,6 +103,7 @@ features = [
   "test",
   "graph",
   "vector_stores",
+  "history_stores",
   "llms",
   "extras",
 ]
@@ -109,6 +114,7 @@ features = [
   "test",
   "graph",
   "vector_stores",
+  "history_stores",
   "llms",
   "extras",
 ]

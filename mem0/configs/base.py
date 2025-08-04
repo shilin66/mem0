@@ -7,6 +7,7 @@ from mem0.embeddings.configs import EmbedderConfig
 from mem0.graphs.configs import GraphStoreConfig
 from mem0.llms.configs import LlmConfig
 from mem0.vector_stores.configs import VectorStoreConfig
+from mem0.history_stores.configs import HistoryStoreConfig
 
 # Set up the directory path
 home_dir = os.path.expanduser("~")
@@ -39,9 +40,9 @@ class MemoryConfig(BaseModel):
         description="Configuration for the embedding model",
         default_factory=EmbedderConfig,
     )
-    history_db_path: str = Field(
-        description="Path to the history database",
-        default=os.path.join(mem0_dir, "history.db"),
+    history_store: HistoryStoreConfig = Field(
+        description="Configuration for the history store",
+        default_factory=HistoryStoreConfig,
     )
     graph_store: GraphStoreConfig = Field(
         description="Configuration for the graph",

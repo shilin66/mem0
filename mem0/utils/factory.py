@@ -106,3 +106,29 @@ class VectorStoreFactory:
     def reset(cls, instance):
         instance.reset()
         return instance
+
+
+class HistoryStoreFactory:
+    """Factory class for creating history store instances."""
+    
+    provider_to_class = {
+        "sqlite": "mem0.history_stores.sqlite.SQLiteManager",
+        "mongodb": "mem0.history_stores.mongodb.MongoDBManager",
+    }
+
+    @classmethod
+    def create(cls, provider_name: str, config):
+        class_type = cls.provider_to_class.get(provider_name)
+        if class_type:
+            if not isinstance(config, dict):
+                config = config.model_dump()
+            history_store_class = load_class(class_type)
+            return history_store_class(**config)
+        else:
+            raise ValueError(f"Unsupported history store provider: {provider_name}")
+
+    @classmethod
+    def reset(cls, instance):
+        """Reset the history store instance."""
+        instance.reset()
+        return instance

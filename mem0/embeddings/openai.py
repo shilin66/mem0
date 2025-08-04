@@ -1,12 +1,24 @@
 import os
 import warnings
-from typing import Literal, Optional
+from typing import Literal, Optional, List
 
 from openai import OpenAI
 
 from mem0.configs.embeddings.base import BaseEmbedderConfig
 from mem0.embeddings.base import EmbeddingBase
 
+def _ensure_dimensional(vec: List[float], target_dim: int = 1536) -> List[float]:
+    length = len(vec)
+    if length > target_dim:
+        # 超长则截断
+        print(
+            f"The current vector dimension is {length}, "
+            f"and the vector dimension cannot exceed {target_dim}. "
+            f"The first {target_dim} dimensions are automatically captured"
+        )
+        return vec[:target_dim]
+    # 不足则补零
+    return vec + [0.0] * (target_dim - length)
 
 class OpenAIEmbedding(EmbeddingBase):
     def __init__(self, config: Optional[BaseEmbedderConfig] = None):
@@ -42,8 +54,15 @@ class OpenAIEmbedding(EmbeddingBase):
             list: The embedding vector.
         """
         text = text.replace("\n", " ")
-        return (
-            self.client.embeddings.create(input=[text], model=self.config.model, dimensions=self.config.embedding_dims)
-            .data[0]
-            .embedding
+        # resp = self.client.embeddings.create(
+        #     input=[text],
+        #     model=self.config.model,
+        #     dimensions=self.config.embedding_dims
+        # )
+        resp = self.client.embeddings.create(
+            input=[text],
+            model=self.config.model
         )
+        raw_vec = resp.data[0].embedding  # 可能是 1024 也可能是 1536
+        # 强制调整到目标维度并返回
+        return _ensure_dimensional(raw_vec, self.config.embedding_dims)

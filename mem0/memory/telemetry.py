@@ -65,7 +65,7 @@ def capture_event(event_name, memory_instance, additional_data=None):
     event_data = {
         "collection": memory_instance.collection_name,
         "vector_size": memory_instance.embedding_model.config.embedding_dims,
-        "history_store": "sqlite",
+        "history_store": f"{memory_instance.db.__class__.__module__}.{memory_instance.db.__class__.__name__}",
         "graph_store": f"{memory_instance.graph.__class__.__module__}.{memory_instance.graph.__class__.__name__}"
         if memory_instance.config.graph_store.config
         else None,

@@ -22,7 +22,7 @@ from mem0.configs.prompts import (
 )
 from mem0.memory.base import MemoryBase
 from mem0.memory.setup import mem0_dir, setup_config
-from mem0.memory.storage import SQLiteManager
+from mem0.utils.factory import HistoryStoreFactory
 from mem0.memory.telemetry import capture_event
 from mem0.memory.utils import (
     get_fact_retrieval_messages,
@@ -129,7 +129,8 @@ class Memory(MemoryBase):
             self.config.vector_store.provider, self.config.vector_store.config
         )
         self.llm = LlmFactory.create(self.config.llm.provider, self.config.llm.config)
-        self.db = SQLiteManager(self.config.history_db_path)
+        # Create history storage based on configuration
+        self.db = HistoryStoreFactory.create(self.config.history_store.provider, self.config.history_store.config)
         self.collection_name = self.config.vector_store.config.collection_name
         self.api_version = self.config.version
 
@@ -949,11 +950,12 @@ class Memory(MemoryBase):
         """
         logger.warning("Resetting all memories")
 
-        if hasattr(self.db, "connection") and self.db.connection:
-            self.db.connection.execute("DROP TABLE IF EXISTS history")
-            self.db.connection.close()
-
-        self.db = SQLiteManager(self.config.history_db_path)
+        # Reset history storage
+        self.db.reset()
+        self.db.close()
+        
+        # Recreate history storage
+        self.db = HistoryStoreFactory.create(self.config.history_store.provider, self.config.history_store.config)
 
         if hasattr(self.vector_store, "reset"):
             self.vector_store = VectorStoreFactory.reset(self.vector_store)
@@ -982,7 +984,8 @@ class AsyncMemory(MemoryBase):
             self.config.vector_store.provider, self.config.vector_store.config
         )
         self.llm = LlmFactory.create(self.config.llm.provider, self.config.llm.config)
-        self.db = SQLiteManager(self.config.history_db_path)
+        # Create history storage based on configuration
+        self.db = HistoryStoreFactory.create(self.config.history_store.provider, self.config.history_store.config)
         self.collection_name = self.config.vector_store.config.collection_name
         self.api_version = self.config.version
 
@@ -1386,18 +1389,13 @@ class AsyncMemory(MemoryBase):
             "mem0.get_all", self, {"limit": limit, "keys": keys, "encoded_ids": encoded_ids, "sync_type": "async"}
         )
 
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future_memories = executor.submit(self._get_all_from_vector_store, effective_filters, limit)
-            future_graph_entities = (
-                executor.submit(self.graph.get_all, effective_filters, limit) if self.enable_graph else None
-            )
-
-            concurrent.futures.wait(
-                [future_memories, future_graph_entities] if future_graph_entities else [future_memories]
-            )
-
-            all_memories_result = future_memories.result()
-            graph_entities_result = future_graph_entities.result() if future_graph_entities else None
+        all_memories_result = await self._get_all_from_vector_store(effective_filters, limit)
+        
+        if self.enable_graph:
+            # 如果启用了图存储，也需要异步调用图存储的方法
+            graph_entities_result = await asyncio.to_thread(self.graph.get_all, effective_filters, limit)
+        else:
+            graph_entities_result = None
 
         if self.enable_graph:
             return {"results": all_memories_result, "relations": graph_entities_result}
@@ -1831,11 +1829,12 @@ class AsyncMemory(MemoryBase):
         if hasattr(self.vector_store, "client") and hasattr(self.vector_store.client, "close"):
             await asyncio.to_thread(self.vector_store.client.close)
 
-        if hasattr(self.db, "connection") and self.db.connection:
-            await asyncio.to_thread(lambda: self.db.connection.execute("DROP TABLE IF EXISTS history"))
-            await asyncio.to_thread(self.db.connection.close)
-
-        self.db = SQLiteManager(self.config.history_db_path)
+        # Reset history storage
+        await asyncio.to_thread(self.db.reset)
+        await asyncio.to_thread(self.db.close)
+        
+        # Recreate history storage
+        self.db = await asyncio.to_thread(HistoryStoreFactory.create, self.config.history_store.provider, self.config.history_store.config)
 
         self.vector_store = VectorStoreFactory.create(
             self.config.vector_store.provider, self.config.vector_store.config
