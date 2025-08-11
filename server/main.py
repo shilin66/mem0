@@ -27,44 +27,112 @@ POSTGRES_COLLECTION_NAME = os.environ.get("POSTGRES_COLLECTION_NAME", "memories"
 NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://neo4j:7687")
 NEO4J_USERNAME = os.environ.get("NEO4J_USERNAME", "neo4j")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "mem0graph")
+NEO4J_DATABASE = os.environ.get("NEO4J_DATABASE", "neo4j")
 
 MEMGRAPH_URI = os.environ.get("MEMGRAPH_URI", "bolt://localhost:7687")
 MEMGRAPH_USERNAME = os.environ.get("MEMGRAPH_USERNAME", "memgraph")
 MEMGRAPH_PASSWORD = os.environ.get("MEMGRAPH_PASSWORD", "mem0graph")
 
+MILVUS_URL = os.environ.get("MILVUS_URL", "http://localhost:19530")
+MILVUS_TOKEN = os.environ.get("MILVUS_TOKEN")
+MILVUS_COLLECTION_NAME = os.environ.get("MILVUS_COLLECTION_NAME", "mem0")
+
+# Vector Store Provider - explicitly specify which vector database to use
+VECTOR_STORE_PROVIDER = os.environ.get("VECTOR_STORE_PROVIDER", "pgvector")
+
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL")
+EMBEDDING_DIMS = int(os.environ.get("EMBEDDING_DIMS", "1536"))
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
+LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
+LLM_TOP_P = float(os.environ.get("LLM_TOP_P", "0.9"))
+LLM_MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "4096"))
+LLM_TEMPERATURE = float(os.environ.get("LLM_TEMPERATURE", "0.2"))
 HISTORY_DB_PATH = os.environ.get("HISTORY_DB_PATH", "/app/history/history.db")
 MONGODB_URI = os.environ.get("MONGODB_URI")
 MONGODB_COLLECTION = os.environ.get("MONGODB_COLLECTION", "history")
 API_KEY = os.environ.get("API_KEY")
 
-DEFAULT_CONFIG = {
-    "version": "v1.1",
-    "vector_store": {
-        "provider": "pgvector",
-        "config": {
+
+def get_default_config():
+    """Get default configuration based on environment variables"""
+    # Use explicit VECTOR_STORE_PROVIDER environment variable
+    vector_store_provider = VECTOR_STORE_PROVIDER.lower()
+
+    # Configure based on the selected provider
+    if vector_store_provider == "milvus":
+        vector_store_config = {
+            "url": MILVUS_URL,
+            "token": MILVUS_TOKEN,
+            "collection_name": MILVUS_COLLECTION_NAME,
+            "embedding_model_dims": EMBEDDING_DIMS
+        }
+    elif vector_store_provider == "pgvector":
+        vector_store_config = {
             "host": POSTGRES_HOST,
             "port": int(POSTGRES_PORT),
             "dbname": POSTGRES_DB,
             "user": POSTGRES_USER,
             "password": POSTGRES_PASSWORD,
             "collection_name": POSTGRES_COLLECTION_NAME,
+        }
+    else:
+        # For other providers, use basic configuration
+        # Users can override this via API endpoints
+        vector_store_config = {}
+        logging.info(f"Using {vector_store_provider} with default configuration. Configure via API if needed.")
+
+    # Build LLM config conditionally
+    llm_config = {
+        "api_key": OPENAI_API_KEY,
+        "openai_base_url": OPENAI_BASE_URL,
+        "model": LLM_MODEL
+    }
+
+    # Only add parameters if the environment variables are set
+    if os.environ.get("LLM_TEMPERATURE"):
+        llm_config["temperature"] = LLM_TEMPERATURE
+    
+    if os.environ.get("LLM_MAX_TOKENS"):
+        llm_config["max_tokens"] = LLM_MAX_TOKENS
+    
+    if os.environ.get("LLM_TOP_P"):
+        llm_config["top_p"] = LLM_TOP_P
+
+    return {
+        "version": "v1.1",
+        "vector_store": {
+            "provider": vector_store_provider,
+            "config": vector_store_config,
         },
-    },
-    "graph_store": {
-        "provider": "neo4j",
-        "config": {"url": NEO4J_URI, "username": NEO4J_USERNAME, "password": NEO4J_PASSWORD},
-    },
-    "llm": {"provider": "openai", "config": {"api_key": OPENAI_API_KEY, "openai_base_url": OPENAI_BASE_URL, "temperature": 0.2, "model": "WebDancer-32B"}},
-    "embedder": {"provider": "openai", "config": {"api_key": OPENAI_API_KEY, "openai_base_url": OPENAI_BASE_URL, "model": "bge-m3"}},
-    "history_store": {
-        "provider": "mongodb",
-        "config": {
-            "connection_string": MONGODB_URI
+        "graph_store": {
+            "provider": "neo4j",
+            "config": {"url": NEO4J_URI, "username": NEO4J_USERNAME, "password": NEO4J_PASSWORD,
+                       "database": NEO4J_DATABASE},
+        },
+        "llm": {
+            "provider": "openai",
+            "config": llm_config
+        },
+        "embedder": {
+            "provider": "openai",
+            "config": {
+                "api_key": OPENAI_API_KEY,
+                "openai_base_url": OPENAI_BASE_URL,
+                "model": EMBEDDING_MODEL,
+                "embedding_dims": EMBEDDING_DIMS
+            }
+        },
+        "history_store": {
+            "provider": "mongodb",
+            "config": {
+                "connection_string": MONGODB_URI
+            }
         }
     }
-}
+
+
+DEFAULT_CONFIG = get_default_config()
 
 # 全局异步内存实例，在启动时初始化
 ASYNC_MEMORY_INSTANCE = None
@@ -76,14 +144,16 @@ async def lifespan(app: FastAPI):
     global ASYNC_MEMORY_INSTANCE
     # 启动时初始化
     try:
+        logging.info(f"Initializing with vector store provider: {VECTOR_STORE_PROVIDER}")
         ASYNC_MEMORY_INSTANCE = await AsyncMemory.from_config(DEFAULT_CONFIG)
-        logging.info("AsyncMemory instance initialized successfully")
+        logging.info(
+            f"AsyncMemory instance initialized successfully with {ASYNC_MEMORY_INSTANCE.config.vector_store.provider} vector store")
     except Exception as e:
         logging.error(f"Failed to initialize AsyncMemory instance: {e}")
         raise
-    
+
     yield
-    
+
     # 关闭时清理（如果需要的话）
     # 这里可以添加清理代码
 
@@ -103,7 +173,7 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(sec
     if not API_KEY:
         # If no API key is configured, skip authentication
         return True
-    
+
     if credentials.credentials != API_KEY:
         raise HTTPException(
             status_code=401,
@@ -153,16 +223,16 @@ async def set_config(config: Dict[str, Any]):
 async def get_memory_instance(custom_fact_extraction_prompt: Optional[str] = None) -> AsyncMemory:
     """获取内存实例，如果需要自定义配置则创建新实例"""
     global ASYNC_MEMORY_INSTANCE
-    
+
     if ASYNC_MEMORY_INSTANCE is None:
         ASYNC_MEMORY_INSTANCE = await AsyncMemory.from_config(DEFAULT_CONFIG)
-    
+
     if custom_fact_extraction_prompt:
         # 创建自定义配置的临时实例
         custom_config = DEFAULT_CONFIG.copy()
         custom_config["custom_fact_extraction_prompt"] = custom_fact_extraction_prompt
         return await AsyncMemory.from_config(custom_config)
-    
+
     return ASYNC_MEMORY_INSTANCE
 
 
@@ -174,11 +244,11 @@ async def add_memory(memory_create: MemoryCreate):
 
     memory_instance = await get_memory_instance(memory_create.custom_fact_extraction_prompt)
 
-    params = {k: v for k, v in memory_create.model_dump().items() 
+    params = {k: v for k, v in memory_create.model_dump().items()
               if v is not None and k not in ["messages", "custom_fact_extraction_prompt", "async_mode"]}
-    
+
     messages = [m.model_dump() for m in memory_create.messages]
-    
+
     try:
         if memory_create.async_mode:
             # 异步创建memory，不等待结果
@@ -196,9 +266,9 @@ async def add_memory(memory_create: MemoryCreate):
 
 @api_v1.get("/memories", summary="Get memories")
 async def get_all_memories(
-    user_id: Optional[str] = None,
-    run_id: Optional[str] = None,
-    agent_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
 ):
     """Retrieve stored memories."""
     if not any([user_id, run_id, agent_id]):
@@ -273,9 +343,9 @@ async def delete_memory(memory_id: str):
 
 @api_v1.delete("/memories", summary="Delete all memories")
 async def delete_all_memories(
-    user_id: Optional[str] = None,
-    run_id: Optional[str] = None,
-    agent_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
 ):
     """Delete all memories for a given identifier."""
     if not any([user_id, run_id, agent_id]):
@@ -309,22 +379,33 @@ async def get_storage_info():
     """Get information about the current storage backends."""
     try:
         memory_instance = await get_memory_instance()
-        
+
         # Get history storage info
         storage_type = type(memory_instance.db).__name__
         history_storage_info = {"type": storage_type}
-        
+
         if hasattr(memory_instance.db, 'db_path'):
             history_storage_info["path"] = memory_instance.db.db_path
         elif hasattr(memory_instance.db, 'database_name'):
-            history_storage_info["database"] = f"{memory_instance.db.database_name}.{memory_instance.db.collection_name}"
-        
+            history_storage_info[
+                "database"] = f"{memory_instance.db.database_name}.{memory_instance.db.collection_name}"
+
         # Get vector store info
         vector_store_info = {
             "type": type(memory_instance.vector_store).__name__,
             "provider": memory_instance.config.vector_store.provider,
         }
-        
+
+        # Add Milvus-specific info if using Milvus
+        if memory_instance.config.vector_store.provider == "milvus":
+            vector_store_info.update({
+                "collection_name": memory_instance.vector_store.collection_name,
+                "embedding_dims": memory_instance.vector_store.embedding_model_dims,
+                "metric_type": memory_instance.vector_store.metric_type,
+                "url": memory_instance.vector_store.client.uri if hasattr(memory_instance.vector_store.client,
+                                                                          'uri') else "N/A"
+            })
+
         # Get graph store info if enabled
         graph_store_info = None
         if hasattr(memory_instance, 'enable_graph') and memory_instance.enable_graph:
@@ -332,7 +413,7 @@ async def get_storage_info():
                 "type": type(memory_instance.graph).__name__,
                 "provider": memory_instance.config.graph_store.provider,
             }
-        
+
         return {
             "history_storage": history_storage_info,
             "vector_store": vector_store_info,
@@ -349,29 +430,31 @@ def home():
     """Redirect to the OpenAPI documentation."""
     return RedirectResponse(url="/docs")
 
+
 @app.get("/health", summary="Health check endpoint", include_in_schema=False)
 def health_check():
     """Health check endpoint that doesn't require authentication."""
     global ASYNC_MEMORY_INSTANCE
-    
+
     health_info = {"status": "healthy"}
-    
+
     # Add storage backend information if memory instance is available
     if ASYNC_MEMORY_INSTANCE and hasattr(ASYNC_MEMORY_INSTANCE, 'db'):
         try:
             storage_type = type(ASYNC_MEMORY_INSTANCE.db).__name__
             storage_info = {"type": storage_type}
-            
+
             if hasattr(ASYNC_MEMORY_INSTANCE.db, 'db_path'):
                 storage_info["path"] = ASYNC_MEMORY_INSTANCE.db.db_path
             elif hasattr(ASYNC_MEMORY_INSTANCE.db, 'database_name'):
                 storage_info["database"] = f"{ASYNC_MEMORY_INSTANCE.db.database_name}.{ASYNC_MEMORY_INSTANCE.db.collection_name}"
-            
+
             health_info["history_storage"] = storage_info
         except Exception as e:
             health_info["history_storage"] = {"error": str(e)}
-    
+
     return health_info
+
 
 # Include the v1 router
 app.include_router(api_v1)

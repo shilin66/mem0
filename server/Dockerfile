@@ -3,6 +3,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Copy mem0 source code first
+COPY ../README.md ./README.md
 COPY ../mem0 ./mem0
 COPY ../pyproject.toml ./pyproject.toml
 COPY ../poetry.lock ./poetry.lock
@@ -11,11 +12,11 @@ COPY ../poetry.lock ./poetry.lock
 RUN pip install --no-cache-dir -e .
 
 # Copy server requirements and install them
-COPY requirements.txt .
+COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy server code
-COPY . .
+COPY server .
 
 EXPOSE 8000
 
