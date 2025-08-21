@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mem0ai"
-version = "0.1.115"
+version = "0.1.116"
 description = "Long-term memory for AI Agents"
 authors = [
     { name = "Mem0", email = "founders@mem0.ai" }
@@ -18,6 +18,7 @@ dependencies = [
     "posthog>=3.5.0",
     "pytz>=2024.1",
     "sqlalchemy>=2.0.31",
+    "protobuf>=5.29.0,<6.0.0",
 ]
 
 [project.optional-dependencies]
@@ -30,12 +31,13 @@ graph = [
 vector_stores = [
     "vecs>=0.4.0",
     "chromadb>=0.4.24",
-    "weaviate-client>=4.4.0",
+    "weaviate-client>=4.4.0,<4.15.0",
     "pinecone<=7.3.0",
     "pinecone-text>=0.10.0",
     "faiss-cpu>=1.7.4",
     "upstash-vector>=0.1.0",
     "azure-search-documents>=11.4.0b8",
+    "psycopg>=3.2.8",
     "pymongo>=4.13.2",
     "pymochow>=2.2.9",
 ]
@@ -115,6 +117,16 @@ features = [
   "graph",
   "vector_stores",
   "history_stores",
+  "llms",
+  "extras",
+]
+
+[tool.hatch.envs.dev_py_3_12]
+python = "3.12"
+features = [
+  "test",
+  "graph",
+  "vector_stores",
   "llms",
   "extras",
 ]

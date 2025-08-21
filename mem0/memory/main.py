@@ -31,7 +31,12 @@ from mem0.memory.utils import (
     process_telemetry_filters,
     remove_code_blocks,
 )
-from mem0.utils.factory import EmbedderFactory, LlmFactory, VectorStoreFactory
+from mem0.utils.factory import (
+    EmbedderFactory,
+    GraphStoreFactory,
+    LlmFactory,
+    VectorStoreFactory,
+)
 
 
 def _build_filters_and_metadata(
@@ -137,14 +142,8 @@ class Memory(MemoryBase):
         self.enable_graph = False
 
         if self.config.graph_store.config:
-            if self.config.graph_store.provider == "memgraph":
-                from mem0.memory.memgraph_memory import MemoryGraph
-            elif self.config.graph_store.provider == "neptune":
-                from mem0.graphs.neptune.main import MemoryGraph
-            else:
-                from mem0.memory.graph_memory import MemoryGraph
-
-            self.graph = MemoryGraph(self.config)
+            provider = self.config.graph_store.provider
+            self.graph = GraphStoreFactory.create(provider, self.config)
             self.enable_graph = True
         else:
             self.graph = None
@@ -953,7 +952,7 @@ class Memory(MemoryBase):
         # Reset history storage
         self.db.reset()
         self.db.close()
-        
+
         # Recreate history storage
         self.db = HistoryStoreFactory.create(self.config.history_store.provider, self.config.history_store.config)
 
@@ -992,9 +991,8 @@ class AsyncMemory(MemoryBase):
         self.enable_graph = False
 
         if self.config.graph_store.config:
-            from mem0.memory.graph_memory import MemoryGraph
-
-            self.graph = MemoryGraph(self.config)
+            provider = self.config.graph_store.provider
+            self.graph = GraphStoreFactory.create(provider, self.config)
             self.enable_graph = True
         else:
             self.graph = None
@@ -1389,16 +1387,23 @@ class AsyncMemory(MemoryBase):
             "mem0.get_all", self, {"limit": limit, "keys": keys, "encoded_ids": encoded_ids, "sync_type": "async"}
         )
 
-        all_memories_result = await self._get_all_from_vector_store(effective_filters, limit)
-        
-        if self.enable_graph:
-            # 如果启用了图存储，也需要异步调用图存储的方法
-            graph_entities_result = await asyncio.to_thread(self.graph.get_all, effective_filters, limit)
-        else:
-            graph_entities_result = None
+        vector_store_task = asyncio.create_task(self._get_all_from_vector_store(effective_filters, limit))
 
+        graph_task = None
         if self.enable_graph:
-            return {"results": all_memories_result, "relations": graph_entities_result}
+            graph_get_all = getattr(self.graph, "get_all", None)
+            if callable(graph_get_all):
+                if asyncio.iscoroutinefunction(graph_get_all):
+                    graph_task = asyncio.create_task(graph_get_all(effective_filters, limit))
+                else:
+                    graph_task = asyncio.create_task(asyncio.to_thread(graph_get_all, effective_filters, limit))
+
+        results_dict = {}
+        if graph_task:
+            vector_store_result, graph_entities_result = await asyncio.gather(vector_store_task, graph_task)
+            results_dict.update({"results": vector_store_result, "relations": graph_entities_result})
+        else:
+            results_dict.update({"results": await vector_store_task})
 
         if self.api_version == "v1.0":
             warnings.warn(
@@ -1408,9 +1413,9 @@ class AsyncMemory(MemoryBase):
                 category=DeprecationWarning,
                 stacklevel=2,
             )
-            return all_memories_result
-        else:
-            return {"results": all_memories_result}
+            return results_dict["results"]
+
+        return results_dict
 
     async def _get_all_from_vector_store(self, filters, limit):
         memories_result = await asyncio.to_thread(self.vector_store.list, filters=filters, limit=limit)
@@ -1832,7 +1837,7 @@ class AsyncMemory(MemoryBase):
         # Reset history storage
         await asyncio.to_thread(self.db.reset)
         await asyncio.to_thread(self.db.close)
-        
+
         # Recreate history storage
         self.db = await asyncio.to_thread(HistoryStoreFactory.create, self.config.history_store.provider, self.config.history_store.config)
 
