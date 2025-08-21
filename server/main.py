@@ -198,7 +198,7 @@ class MemoryCreate(BaseModel):
     agent_id: Optional[str] = None
     run_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
-    custom_fact_extraction_prompt: Optional[str] = Field(None, description="Custom prompt for fact extraction.")
+    custom_instructions: Optional[str] = Field(None, description="Custom prompt for fact extraction.")
     infer: Optional[bool] = Field(True, description="Whether to use LLM for fact extraction. Default is True.")
     async_mode: Optional[bool] = Field(False, description="Whether to create memory asynchronously. Default is False.")
 
@@ -242,10 +242,10 @@ async def add_memory(memory_create: MemoryCreate):
     if not any([memory_create.user_id, memory_create.agent_id, memory_create.run_id]):
         raise HTTPException(status_code=400, detail="At least one identifier (user_id, agent_id, run_id) is required.")
 
-    memory_instance = await get_memory_instance(memory_create.custom_fact_extraction_prompt)
+    memory_instance = await get_memory_instance(memory_create.custom_instructions)
 
     params = {k: v for k, v in memory_create.model_dump().items()
-              if v is not None and k not in ["messages", "custom_fact_extraction_prompt", "async_mode"]}
+              if v is not None and k not in ["messages", "custom_instructions", "async_mode"]}
 
     messages = [m.model_dump() for m in memory_create.messages]
 
