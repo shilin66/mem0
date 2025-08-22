@@ -74,6 +74,45 @@ class PGVector(VectorStoreBase):
         self.use_hnsw = hnsw
         self.embedding_model_dims = embedding_model_dims
 
+        # Check if database exists, create if it doesn't
+        if dbname:
+            # Connect to default postgres database to check and create target database
+            temp_conn_params = {
+                'dbname': 'postgres',  # Connect to default database
+                'user': user,
+                'password': password,
+                'host': host,
+                'port': port
+            }
+            if sslmode:
+                temp_conn_params['sslmode'] = sslmode
+            
+            try:
+                if PSYCOPG_VERSION == 3:
+                    temp_conn = psycopg.connect(**temp_conn_params)
+                else:
+                    temp_conn = psycopg2.connect(**temp_conn_params)
+                
+                temp_cur = temp_conn.cursor()
+                
+                # Check if database exists
+                temp_cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (dbname,))
+                exists = temp_cur.fetchone()
+                
+                if not exists:
+                    logger.info(f"Database {dbname} does not exist. Creating it.")
+                    temp_conn.autocommit = True  # Required for CREATE DATABASE
+                    temp_cur.execute(f"CREATE DATABASE \"{dbname}\"")
+                    logger.info(f"Database {dbname} created successfully.")
+                else:
+                    logger.info(f"Database {dbname} already exists. Using it.")
+                
+                temp_cur.close()
+                temp_conn.close()
+                
+            except Exception as e:
+                logger.warning(f"Could not create database {dbname}: {e}. Will attempt to use it anyway.")
+
         # Connection setup with priority: connection_pool > connection_string > individual parameters
         if connection_pool is not None:
             # Use provided connection pool

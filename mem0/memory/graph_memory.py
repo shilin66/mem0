@@ -29,6 +29,36 @@ logger = logging.getLogger(__name__)
 class MemoryGraph:
     def __init__(self, config):
         self.config = config
+        
+        # Check if database exists, create if it doesn't
+        database_name = self.config.graph_store.config.database
+        if database_name:
+            # Connect to system database to check and create target database
+            system_graph = Neo4jGraph(
+                self.config.graph_store.config.url,
+                self.config.graph_store.config.username,
+                self.config.graph_store.config.password,
+                "system",  # Connect to system database
+                refresh_schema=False,
+                driver_config={"notifications_min_severity": "OFF"},
+            )
+            
+            # Check if database exists, create if it doesn't
+            try:
+                result = system_graph.query("SHOW DATABASES")
+                databases = [record["name"] for record in result]
+                if database_name not in databases:
+                    logger.info(f"Database {database_name} does not exist. Creating it.")
+                    system_graph.query(f"CREATE DATABASE {database_name}")
+                    logger.info(f"Database {database_name} created successfully.")
+                else:
+                    logger.info(f"Database {database_name} already exists. Using it.")
+            except Exception as e:
+                logger.warning(f"Could not create database {database_name}: {e}. Will attempt to use it anyway.")
+            finally:
+                # Close system connection
+                system_graph._driver.close()
+        
         self.graph = Neo4jGraph(
             self.config.graph_store.config.url,
             self.config.graph_store.config.username,
