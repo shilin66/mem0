@@ -40,10 +40,12 @@ MILVUS_COLLECTION_NAME = os.environ.get("MILVUS_COLLECTION_NAME", "mem0")
 # Vector Store Provider - explicitly specify which vector database to use
 VECTOR_STORE_PROVIDER = os.environ.get("VECTOR_STORE_PROVIDER", "pgvector")
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL")
+OPENAI_EMBEDDING_API_KEY = os.environ.get("OPENAI_EMBEDDING_API_KEY")
+OPENAI_EMBEDDING_BASE_URL = os.environ.get("OPENAI_EMBEDDING_BASE_URL")
 EMBEDDING_DIMS = int(os.environ.get("EMBEDDING_DIMS", "1536"))
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
+OPENAI_LLM_API_KEY = os.environ.get("OPENAI_LLM_API_KEY")
+OPENAI_LLM_BASE_URL = os.environ.get("OPENAI_LLM_BASE_URL")
 LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
 LLM_TOP_P = float(os.environ.get("LLM_TOP_P", "0.9"))
 LLM_MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "4096"))
@@ -84,8 +86,8 @@ def get_default_config():
 
     # Build LLM config conditionally
     llm_config = {
-        "api_key": OPENAI_API_KEY,
-        "openai_base_url": OPENAI_BASE_URL,
+        "api_key": OPENAI_LLM_API_KEY,
+        "openai_base_url": OPENAI_LLM_BASE_URL,
         "model": LLM_MODEL
     }
 
@@ -117,8 +119,8 @@ def get_default_config():
         "embedder": {
             "provider": "openai",
             "config": {
-                "api_key": OPENAI_API_KEY,
-                "openai_base_url": OPENAI_BASE_URL,
+                "api_key": OPENAI_EMBEDDING_API_KEY,
+                "openai_base_url": OPENAI_EMBEDDING_BASE_URL,
                 "model": EMBEDDING_MODEL,
                 "embedding_dims": EMBEDDING_DIMS
             }
